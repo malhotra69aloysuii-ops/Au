@@ -1,0 +1,155 @@
+name: RDP Setup with Pinggy Tunnel
+
+on:
+  workflow_dispatch:  # Trigger manually from GitHub UI
+
+jobs:
+  windows-rdp:
+    runs-on: windows-latest
+
+    steps:
+      - name: Set up PowerShell
+        shell: pwsh
+        run: echo "PowerShell set up"
+
+      - name: Set up environment
+        run: |
+          # Define the RDP username and password
+          $username = "runneradmin"
+          $password = "P@ssw0rd!"
+
+          Write-Output "RDP Connection Details:"
+          Write-Output "Username: $username"
+          Write-Output "Password: $password"
+
+      - name: Download Pinggy executable
+        run: |
+          # Define the path for pinggy.exe
+          $pinggyPath = "$env:GITHUB_WORKSPACE\pinggy.exe"
+          
+          # Download the Pinggy executable
+          Invoke-WebRequest -Uri "https://s3.ap-south-1.amazonaws.com/public.pinggy.binaries/cli/v0.1.4/windows/amd64/pinggy.exe" -OutFile $pinggyPath
+          
+          # Check if the file exists
+          if (!(Test-Path $pinggyPath)) {
+              Write-Output "Pinggy executable download failed."
+              exit 1
+          }
+
+          # Output the file location for debugging
+          Write-Output "Pinggy executable downloaded to: $pinggyPath"
+
+      - name: Download background image
+        run: |
+          # Define the path for the background image
+          $imagePath = "$env:GITHUB_WORKSPACE\Wallpaper.jpeg"
+
+          # Download the image from Dropbox
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/e9kpn08c4k62sf4d4yw9v/Wallpaper.jpeg?rlkey=0q6ko9kj89apeixmzevlxbnwh&e=1&st=wtg6vfwv&dl=1" -OutFile $imagePath
+
+          # Check if the image file exists
+          if (!(Test-Path $imagePath)) {
+              Write-Output "Image download failed."
+              exit 1
+          }
+
+          # Output the image location for debugging
+          Write-Output "Image downloaded to: $imagePath"
+
+      - name: Set downloaded image as desktop background
+        run: |
+          # Set the downloaded image as the desktop wallpaper using registry settings
+          $imagePath = "$env:GITHUB_WORKSPACE\Wallpaper.jpeg"
+          $regKey = "HKCU:\Control Panel\Desktop"
+          Set-ItemProperty -Path $regKey -Name "Wallpaper" -Value $imagePath
+          Set-ItemProperty -Path $regKey -Name "WallpaperStyle" -Value "2"  # Stretch wallpaper
+          Set-ItemProperty -Path $regKey -Name "TileWallpaper" -Value "0"    # Do not tile the wallpaper
+          
+          # To prevent users from changing the wallpaper, we can disable wallpaper settings in the registry
+          $wallpaperLockKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+          if (-not (Test-Path $wallpaperLockKey)) {
+              New-Item -Path $wallpaperLockKey -Force
+          }
+          Set-ItemProperty -Path $wallpaperLockKey -Name "NoChangingWallPaper" -Value 1
+
+          Write-Output "Wallpaper set and locked successfully."
+
+      - name: Configure Remote Desktop and Set Password
+        run: |
+          # Enable Remote Desktop connections
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          
+          # Enable the Remote Desktop firewall rule
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          # Ensure UserAuthentication is enabled for RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+          # Set the password for the runneradmin user
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
+
+      # Office Installation Steps
+      - name: Create installation directory
+        run: mkdir C:\Office2024
+        shell: pwsh
+
+      - name: Download Office Deployment Tool
+        run: |
+          Invoke-WebRequest -Uri "https://download.microsoft.com/download/2/7/A/27AF1BE6-DD20-4CB4-B154-EBAB8A7D4A7E/officedeploymenttool_18129-20030.exe" -OutFile C:\Office2024\officedeploymenttool.exe
+        shell: pwsh
+
+      - name: Download Configuration.xml
+        run: |
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/wlx7isb67yc0rlnxvohke/Configuration.xml?rlkey=dmaxhbib3glrc0fpn2j9yo6sj&st=74vankhe&dl=1" -OutFile C:\Office2024\Configuration.xml
+        shell: pwsh
+
+      - name: Extract Office Deployment Tool
+        run: |
+          Start-Process -FilePath "C:\Office2024\officedeploymenttool.exe" -ArgumentList "/quiet", "/extract:C:\Office2024" -NoNewWindow -Wait
+        shell: pwsh
+
+      - name: Install Microsoft Office 2024
+        run: |
+          C:\Office2024\setup.exe /configure C:\Office2024\Configuration.xml
+        shell: pwsh
+
+      - name: Start Pinggy TCP tunnel
+        env:
+          PINGGY_API_KEY: ${{ secrets.PINGGY_API_KEY }}
+        run: |
+          # Define the path for pinggy.exe
+          $pinggyPath = "$env:GITHUB_WORKSPACE\pinggy.exe"
+
+          # Ensure we're in the correct directory
+          Set-Location -Path $env:GITHUB_WORKSPACE
+          
+          # Construct and run the Pinggy command with the full path to pinggy.exe
+          $apiToken = "${env:PINGGY_API_KEY}+tcp@a.pinggy.io"
+          $command = "& `"$pinggyPath`" -p 443 -R0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 $apiToken"
+          $tunnelOutput = Invoke-Expression $command
+          
+          # Display the tunnel output for debugging
+          Write-Output "Pinggy tunnel output:"
+          Write-Output $tunnelOutput
+
+          # Extract IP and Port from the tunnel output
+          if ($tunnelOutput -match "tcp://(.+):(\d+)")
+          {
+            $publicIp = $matches[1]
+            $publicPort = $matches[2]
+            
+            Write-Output "Public IP Address: $publicIp"
+            Write-Output "Public Port: $publicPort"
+            Write-Output "Username: $username"
+            Write-Output "Password: $password"
+          }
+          else
+          {
+            Write-Output "Unable to extract public IP and port from Pinggy output."
+            exit 1
+          }
+
+      - name: Start 6-hour timer
+        run: |
+          Write-Output "Keeping session open for 6 hours..."
+          Start-Sleep -Seconds 21600  # 6 hours in seconds
