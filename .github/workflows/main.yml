@@ -88,31 +88,6 @@ jobs:
           # Set the password for the runneradmin user
           Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
 
-      # Office Installation Steps
-      - name: Create installation directory
-        run: mkdir C:\Office2024
-        shell: pwsh
-
-      - name: Download Office Deployment Tool
-        run: |
-          Invoke-WebRequest -Uri "https://download.microsoft.com/download/2/7/A/27AF1BE6-DD20-4CB4-B154-EBAB8A7D4A7E/officedeploymenttool_18129-20030.exe" -OutFile C:\Office2024\officedeploymenttool.exe
-        shell: pwsh
-
-      - name: Download Configuration.xml
-        run: |
-          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/wlx7isb67yc0rlnxvohke/Configuration.xml?rlkey=dmaxhbib3glrc0fpn2j9yo6sj&st=74vankhe&dl=1" -OutFile C:\Office2024\Configuration.xml
-        shell: pwsh
-
-      - name: Extract Office Deployment Tool
-        run: |
-          Start-Process -FilePath "C:\Office2024\officedeploymenttool.exe" -ArgumentList "/quiet", "/extract:C:\Office2024" -NoNewWindow -Wait
-        shell: pwsh
-
-      - name: Install Microsoft Office 2024
-        run: |
-          C:\Office2024\setup.exe /configure C:\Office2024\Configuration.xml
-        shell: pwsh
-
       - name: Start Pinggy TCP tunnel
         env:
           PINGGY_API_KEY: ${{ secrets.PINGGY_API_KEY }}
