@@ -1,0 +1,6 @@
+{
+  "name": "EpicLibrary",
+  "description": "An unofficial client for viewing and managing your Epic Games library with native in-app OAuth and offline caching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
